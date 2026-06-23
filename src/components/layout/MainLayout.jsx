@@ -12,7 +12,7 @@ export default function MainLayout({
   pageTitle,
   pageSubtitle,
 }) {
-  const { user } = useAuth(); 
+  const { user } = useAuth();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   const openSidebar = useCallback(() => setIsSidebarOpen(true), []);
@@ -23,18 +23,12 @@ export default function MainLayout({
       onNavigate?.(path, options);
       closeSidebar();
     },
-    [onNavigate, closeSidebar]
+    [onNavigate, closeSidebar],
   );
 
-  // Logic: Show notifications only if user is a Manager with an assigned market
-const userMarket =
-  user?.role === "market_manager" ? user.market : null;
   return (
     <div className="h-screen bg-slate-50 flex overflow-hidden">
-      
-
-
-      {/* Desktop sidebar (fixed left) */}
+      {/* Desktop sidebar */}
       <aside className="hidden lg:block w-64 bg-slate-900 text-white">
         <Sidebar
           onNavigate={handleNavigate}
@@ -65,12 +59,11 @@ const userMarket =
         />
       </aside>
 
-      {/* Right side: header + content */}
       <div className="flex flex-col flex-1 min-w-0">
         <Header
           onNavigate={handleNavigate}
-          onBack={onBack} // Pass down
-          canGoBack={canGoBack} // Pass down
+          onBack={onBack}
+          canGoBack={canGoBack}
           pageTitle={pageTitle}
           pageSubtitle={pageSubtitle}
           onToggleSidebar={openSidebar}

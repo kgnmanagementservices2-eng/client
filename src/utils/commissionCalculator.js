@@ -48,8 +48,8 @@ export const calculateCommissionTotals = (values) => {
     leasing_commission +
     his_spiff;
 
-  const csat_comm_loss = total_commission * 0.1;
-
+  const manualCsatLoss = num(values.csat_comm_loss);
+  const csat_comm_loss = manualCsatLoss;
   // Deductions & Reimbursements
   const rebate_chargeback = num(values.rebate_chargeback);
   const deposit_chargeback = num(values.deposit_chargeback);

@@ -1,13 +1,10 @@
-
 import React, { useState, useEffect } from "react";
 import { useGlobalState } from "/src/context/GlobalStateContext.jsx";
 import { useAuth } from "/src/context/AuthContext.jsx";
 import { XIcon } from "/src/components/icons/Icons.jsx";
-import api from "/src/services/api.js";
 import logo from "../../assets/logo-dark.png";
-import MonthlyReconciliations from "/src/components/MonthlyReconciliations.jsx"; // ✅ IMPORTED HERE
+import MonthlyReconciliations from "/src/components/MonthlyReconciliations.jsx";
 
-// Simple Chevron Icon
 const ChevronDown = ({ className }) => (
   <svg
     xmlns="http://www.w3.org/2000/svg"
@@ -23,14 +20,12 @@ const ChevronDown = ({ className }) => (
   </svg>
 );
 
-// 1. Navigation Structure
 const navStructure = [
   { name: "Dashboard", path: "dashboard" },
   { name: "Cash Tracker", path: "combined-sales-expenses" },
   { name: "Sales", path: "sales" },
   { name: "Variance", path: "variance" },
   { name: "Till Amount", path: "till" },
-  // -- Store Expenses Group --
   {
     name: "Store Expenses",
     id: "group-store-expenses",
@@ -41,8 +36,6 @@ const navStructure = [
       { name: "Expense History", path: "expense-history" },
     ],
   },
-
-  // -- Payroll Group --
   {
     name: "Payroll",
     id: "group-payroll",
@@ -53,8 +46,6 @@ const navStructure = [
       { name: "Payroll History", path: "payroll-history" },
     ],
   },
-
-  // -- Commission Group --
   {
     name: "Commission",
     id: "group-commission",
@@ -69,8 +60,6 @@ const navStructure = [
       { name: "Commission History", path: "commission-history" },
     ],
   },
-
-  // -- Pick Up Group --
   {
     name: "Pick Up",
     id: "group-pickup",
@@ -79,13 +68,24 @@ const navStructure = [
       { name: "Pick Up Approval", path: "pickup-approval", adminOnly: true },
     ],
   },
+  {
+    name: "Admin Tools",
+    id: "group-admin",
+    isGroup: true,
+    adminOnly: true,
+    children: [
+      {
+        name: "Hierarchy Management",
+        path: "admin-management",
+        adminOnly: true,
+      },
+    ],
+  },
 ];
 
-// 2. Helper to flatten items for permission checking (removes duplicates)
 const getFlatNavItems = (structure) => {
   const flat = [];
   const seenPaths = new Set();
-
   structure.forEach((item) => {
     if (item.isGroup) {
       item.children.forEach((child) => {
@@ -105,31 +105,24 @@ const getFlatNavItems = (structure) => {
 };
 
 const allNavItems = getFlatNavItems(navStructure);
-const normalize = (s) => (s ?? "").toString().trim().toLowerCase();
 
 export default function Sidebar({ onNavigate, currentPage, onClose }) {
   const {
     markets,
     selectedMarket,
-    selectedStore,
     setSelectedMarket,
-    setSelectedStore,
     pendingApprovalsCount,
     pendingPayrollCount,
     pendingCommissionCount,
+    hasGlobalAccess,
   } = useGlobalState();
 
   const { user } = useAuth();
 
-  // -- Permission Logic --
   const isAdminBase =
     user && (user.role === "admin" || user.role === "super_admin");
-  const isExpenseCommissionMgr =
-    user?.role === "expense_commission_manager";
+  const isExpenseCommissionMgr = user?.role === "expense_commission_manager";
   const isPayrollMgr = user?.role === "payroll_manager";
-  
-  // 🛡️ CRITICAL FIX: Updated to match the PostgreSQL Enum "market_manager"
-  const isLockedManager = user && user.role === "market_manager";
 
   let allowedPaths;
   if (isExpenseCommissionMgr) {
@@ -141,12 +134,12 @@ export default function Sidebar({ onNavigate, currentPage, onClose }) {
       "store-expense",
       "expense-approval",
       "expense-history",
-      "commission-entry", 
+      "commission-entry",
       "commission-approval",
       "commission-history",
       "combined-sales-expenses",
       "in-hand-cash",
-      "pickup-approval"
+      "pickup-approval",
     ];
   } else if (isPayrollMgr) {
     allowedPaths = [
@@ -156,74 +149,36 @@ export default function Sidebar({ onNavigate, currentPage, onClose }) {
       "payroll-history",
       "combined-sales-expenses",
       "in-hand-cash",
+      "admin-management",
     ];
   } else if (isAdminBase) {
     allowedPaths = allNavItems.map((i) => i.path).concat("in-hand-cash");
   } else {
-    // Standard Market Managers get non-admin routes
     allowedPaths = allNavItems
       .filter((i) => !i.adminOnly)
       .map((i) => i.path)
       .concat("in-hand-cash");
   }
 
-  // -- Toggle State for Groups --
   const [expandedGroups, setExpandedGroups] = useState({});
 
-  // Auto-expand group if current page is inside it
   useEffect(() => {
     navStructure.forEach((item) => {
-      if (item.isGroup) {
-        const hasActiveChild = item.children.some(
-          (child) => child.path === currentPage
-        );
-        if (hasActiveChild) {
-          setExpandedGroups((prev) => ({ ...prev, [item.id]: true }));
-        }
+      if (item.isGroup && item.children.some((c) => c.path === currentPage)) {
+        setExpandedGroups((prev) => ({ ...prev, [item.id]: true }));
       }
     });
   }, [currentPage]);
 
-  const toggleGroup = (groupId) => {
+  const toggleGroup = (groupId) =>
     setExpandedGroups((prev) => ({ ...prev, [groupId]: !prev[groupId] }));
-  };
 
-  // -- Standard Market/Store State --
-  const [stagedMarket, setStagedMarket] = useState(selectedMarket);
-  const [stagedStore, setStagedStore] = useState(selectedStore);
-  const [stagedStores, setStagedStores] = useState([]);
+  const [stagedMarket, setStagedMarket] = useState(selectedMarket || "");
 
-  useEffect(() => setStagedMarket(selectedMarket), [selectedMarket]);
-  useEffect(() => setStagedStore(selectedStore), [selectedStore]);
-
-  useEffect(() => {
-    const fetchStagedStores = async () => {
-      try {
-        const marketToFetch = selectedMarket || "";
-        const storeList = await api.getStores(marketToFetch);
-        const storeNames = (storeList || [])
-          .map((s) => {
-            if (typeof s === "object" && s !== null) return s.code || "";
-            return s;
-          })
-          .filter(Boolean)
-          .sort();
-        setStagedStores(storeNames);
-      } catch (err) {
-        console.error("Failed to fetch staged stores", err);
-        setStagedStores([]);
-      }
-    };
-    fetchStagedStores();
-  }, [selectedMarket]);
+  useEffect(() => setStagedMarket(selectedMarket || ""), [selectedMarket]);
 
   const handleMarketApply = () => {
     setSelectedMarket(stagedMarket);
-    setSelectedStore(stagedStore);
-  };
-
-  const handleStoreApply = () => {
-    setSelectedStore(stagedStore);
   };
 
   const handleNav = (path) => {
@@ -231,38 +186,26 @@ export default function Sidebar({ onNavigate, currentPage, onClose }) {
     if (onClose) onClose();
   };
 
-  // -- Helper: Get Badge Count for a specific path --
   const getBadgeForPath = (path) => {
-    if (path === "expense-approval") return pendingApprovalsCount;
-    if (path === "payroll-approval") return pendingPayrollCount;
-    if (path === "commission-approval") return pendingCommissionCount;
-    // Note: Add pickup approval count here when available in GlobalState
+    if (path === "expense-approval") return Number(pendingApprovalsCount) || 0;
+    if (path === "payroll-approval") return Number(pendingPayrollCount) || 0;
+    if (path === "commission-approval")
+      return Number(pendingCommissionCount) || 0;
     return 0;
   };
 
-  // -- Helper: Render a single nav link --
   const renderNavLink = (item, isChild = false, parentId = "root") => {
     const isActive = currentPage === item.path;
     const badgeCount = getBadgeForPath(item.path);
-    const badgeVisible = badgeCount > 0;
-
-    const uniqueKey = `${parentId}-${item.path}`;
-
     return (
       <button
-        key={uniqueKey}
+        key={`${parentId}-${item.path}`}
         type="button"
         onClick={() => handleNav(item.path)}
-        className={`w-full text-left flex items-center justify-between px-3 py-2 rounded-lg transition-all duration-200 
-          ${isChild ? "pl-9 text-sm" : ""} 
-          ${
-            isActive
-              ? "bg-slate-700 text-white shadow-sm"
-              : "text-slate-200 hover:bg-slate-800 hover:text-white"
-          }`}
+        className={`w-full text-left flex items-center justify-between px-3 py-2 rounded-lg transition-all duration-200 ${isChild ? "pl-9 text-sm" : ""} ${isActive ? "bg-slate-700 text-white shadow-sm" : "text-slate-200 hover:bg-slate-800 hover:text-white"}`}
       >
         <span className="truncate">{item.name}</span>
-        {badgeVisible && (
+        {badgeCount > 0 && (
           <span className="bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full font-medium min-w-[1.25rem] flex items-center justify-center">
             {badgeCount > 99 ? "99+" : badgeCount}
           </span>
@@ -276,174 +219,118 @@ export default function Sidebar({ onNavigate, currentPage, onClose }) {
       id="sidebar"
       className="w-64 h-screen bg-slate-900 text-slate-100 p-4 pb-6 flex flex-col shadow-xl border-r border-slate-800 overflow-y-auto no-scrollbar relative"
     >
-      {/* Close button for mobile */}
       <button
-        id="sidebar-close"
-        type="button"
         onClick={onClose}
-        className="absolute top-3 right-3 inline-flex items-center p-2 text-sm text-slate-400 rounded-lg lg:hidden hover:bg-slate-800 hover:text-white focus:outline-none focus:ring-2 focus:ring-slate-600"
+        className="absolute top-3 right-3 p-2 text-slate-400 rounded-lg lg:hidden hover:bg-slate-800 hover:text-white"
       >
-        <span className="sr-only">Close sidebar</span>
         <XIcon className="w-5 h-5" />
       </button>
 
-      {/* Brand */}
-      <div className="mb-2 mt-2 ">
-        <div className="flex items-start">
-          <img
-            src={logo}
-            alt="CashFlow Pro"
-            className="h-14 w-auto object-contain"
-          />
-        </div>
+      {/* 🔥 THE FIX: Company Name displayed under the logo */}
+      <div className="mb-4 mt-2 flex flex-col items-start gap-1">
+        <img
+          src={logo}
+          alt="CashFlow Pro"
+          className="h-14 w-auto object-contain"
+        />
+        {user?.companyName && (
+          <span className="text-[17px] font-extrabold text-indigo-400 uppercase tracking-widest truncate w-full px-1">
+            {user.companyName}
+          </span>
+        )}
       </div>
 
-      {/* Market Dropdown */}
-      <div id="sidebar-markets" className="mb-3 space-y-1">
+      <div id="sidebar-markets" className="mb-5 space-y-1">
         <label className="block text-[11px] uppercase tracking-wide text-slate-400">
-          Market
+          Market Filter
         </label>
         <div className="grid grid-cols-[1fr_auto] gap-2 mt-1">
           <select
-            id="market-select"
             value={stagedMarket}
-            onChange={(e) => setStagedMarket(normalize(e.target.value))}
-            className="w-full bg-slate-800/80 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-emerald-400 disabled:opacity-70 disabled:cursor-not-allowed"
-            disabled={isLockedManager}
+            onChange={(e) => {
+              const value = e.target.value ? parseInt(e.target.value, 10) : "";
+              setStagedMarket(value);
+            }}
+            className="w-full bg-slate-800/80 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none"
+            disabled={!hasGlobalAccess && markets.length <= 1}
           >
-            {isLockedManager ? (
-              <option value={stagedMarket}>
-                {stagedMarket?.toUpperCase() || "NO MARKET"}
-              </option>
-            ) : (
-              <>
-                <option value="">All Markets</option>
-                {markets.map((m) => (
-                  <option key={m} value={normalize(m)}>
-                    {m}
-                  </option>
-                ))}
-              </>
+            {(hasGlobalAccess || markets.length > 1) && (
+              <option value="">All Markets</option>
             )}
-          </select>
-          <button
-            id="market-apply"
-            onClick={handleMarketApply}
-            className="text-[11px] bg-emerald-500 hover:bg-emerald-600 text-white px-2.5 py-1.5 rounded-lg shrink-0 font-medium disabled:opacity-50 disabled:cursor-not-allowed transition"
-            disabled={isLockedManager || stagedMarket === selectedMarket}
-          >
-            Apply
-          </button>
-        </div>
-      </div>
-
-      {/* Store Dropdown */}
-      <div id="sidebar-stores" className="mb-5 space-y-1">
-        <label className="block text-[11px] uppercase tracking-wide text-slate-400">
-          Store
-        </label>
-        <div className="grid grid-cols-[1fr_auto] gap-2 mt-1">
-          <select
-            id="store-select"
-            value={stagedStore}
-            onChange={(e) => setStagedStore(normalize(e.target.value))}
-            className="w-full bg-slate-800/80 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-emerald-400 disabled:opacity-70 disabled:cursor-not-allowed"
-            disabled={stagedStores.length === 0}
-          >
-            <option value="">All Stores</option>
-            {stagedStores.map((s) => (
-              <option key={s} value={normalize(s)}>
-                {s}
+            {markets.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
               </option>
             ))}
           </select>
           <button
-            id="store-apply"
-            onClick={handleStoreApply}
-            className="text-[11px] bg-emerald-500 hover:bg-emerald-600 text-white px-2.5 py-1.5 rounded-lg shrink-0 font-medium disabled:opacity-50 disabled:cursor-not-allowed transition"
+            onClick={handleMarketApply}
             disabled={
-              stagedStore === selectedStore || stagedStores.length === 0
+              stagedMarket === selectedMarket ||
+              (!hasGlobalAccess && markets.length <= 1)
             }
+            className="text-[11px] bg-emerald-500 hover:bg-emerald-600 text-white px-2.5 py-1.5 rounded-lg disabled:opacity-50 transition"
           >
             Apply
           </button>
         </div>
       </div>
 
-      {/* ✅ ADDED MONTHLY RECONCILIATIONS BUTTON FOR ADMINS ONLY */}
       {isAdminBase && (
-        <div className="mb-6 [&>button]:w-full">
+        <div className="mb-6">
           <MonthlyReconciliations />
         </div>
       )}
 
-      {/* Navigation */}
       <nav className="space-y-0.5 text-sm flex-1">
         <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1.5">
           Menu
         </p>
-
         {navStructure.map((item) => {
-          // 1. DROPDOWN GROUPS
           if (item.isGroup) {
             const visibleChildren = item.children.filter((child) =>
-              allowedPaths.includes(child.path)
+              allowedPaths.includes(child.path),
             );
             if (visibleChildren.length === 0) return null;
-
             const isExpanded = expandedGroups[item.id];
-
-            const groupBadgeTotal = visibleChildren.reduce((acc, child) => {
-              return acc + getBadgeForPath(child.path);
-            }, 0);
+            const groupBadgeTotal = visibleChildren.reduce(
+              (acc, child) => acc + getBadgeForPath(child.path),
+              0,
+            );
 
             return (
               <div key={item.id} className="mb-1">
                 <button
-                  type="button"
                   onClick={() => toggleGroup(item.id)}
-                  className={`w-full text-left flex items-center justify-between px-3 py-2 rounded-lg transition-colors duration-200 
-                    ${
-                      isExpanded
-                        ? "text-slate-100 bg-slate-800/50"
-                        : "text-slate-200 hover:bg-slate-800 hover:text-white"
-                    }`}
+                  className={`w-full text-left flex items-center justify-between px-3 py-2 rounded-lg transition-colors duration-200 ${isExpanded ? "text-slate-100 bg-slate-800/50" : "text-slate-200 hover:bg-slate-800 hover:text-white"}`}
                 >
                   <span className="font-medium">{item.name}</span>
                   <div className="flex items-center gap-2">
                     {groupBadgeTotal > 0 && (
-                      <span className="bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full font-medium min-w-[1.25rem] flex items-center justify-center">
-                        {groupBadgeTotal > 99 ? "99+" : groupBadgeTotal}
+                      <span className="bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">
+                        {groupBadgeTotal}
                       </span>
                     )}
                     <ChevronDown
-                      className={`w-4 h-4 transition-transform duration-200 ${
-                        isExpanded ? "rotate-180" : ""
-                      }`}
+                      className={`w-4 h-4 transition-transform ${isExpanded ? "rotate-180" : ""}`}
                     />
                   </div>
                 </button>
-
                 {isExpanded && (
                   <div className="mt-1 space-y-0.5 animate-fadeIn">
                     {visibleChildren.map((child) =>
-                      renderNavLink(child, true, item.id)
+                      renderNavLink(child, true, item.id),
                     )}
                   </div>
                 )}
               </div>
             );
           }
-
-          // 2. STANDARD ITEMS
-          if (allowedPaths.includes(item.path)) {
+          if (allowedPaths.includes(item.path))
             return renderNavLink(item, false, "root");
-          }
-
           return null;
         })}
       </nav>
-
       <div className="mt-4 pt-3 border-t border-slate-800 text-[11px] text-slate-500">
         <p>© {new Date().getFullYear()} CashFlow Pro</p>
       </div>

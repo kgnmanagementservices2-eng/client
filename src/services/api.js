@@ -1,8 +1,6 @@
-// const BASE_URL = window.API_BASE_URL || `${window.location.origin}/api`;
-
 const BASE_URL =
-  import.meta.env.VITE_API_BASE_URL;
-// Reads token fresh per request
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:3000/api";
+
 function authHeaders() {
   const token = localStorage.getItem("token");
   const headers = { "Content-Type": "application/json" };
@@ -43,8 +41,6 @@ const api = {
       // ignore
     }
 
-    // --- 🛡️ THE FIX: Bulletproof Auto-Logout ---
-    // 1. Safely force the error message into a readable string
     let errorMsg = res.statusText || "";
     if (data) {
       if (typeof data === "string") errorMsg = data;
@@ -56,7 +52,6 @@ const api = {
     const safeError = errorMsg.toLowerCase();
     const isLoginRoute = endpoint.includes("/login");
 
-    // 2. Aggressive capture of 401s, 403s, or token errors (BUT IGNORE LOGIN)
     if (
       !isLoginRoute &&
       (res.status === 401 ||
@@ -72,23 +67,11 @@ const api = {
       throw new Error("Session expired. Redirecting to login...");
     }
 
-    // 3. Normal Error Throw
     if (!res.ok) {
       throw new Error(errorMsg || "Request failed");
     }
 
     return data;
-  },
-
-  withQuery(basePath, params = {}) {
-    const u = new URL(`http://dummy.com/${basePath}`);
-    Object.entries(params).forEach(([k, v]) => {
-      if (v !== undefined && v !== null) {
-        const s = String(v).trim();
-        if (s !== "") u.searchParams.set(k, s);
-      }
-    });
-    return u.pathname.replace(/^\/+/, "") + u.search;
   },
 
   // --- Auth ---
@@ -108,94 +91,58 @@ const api = {
     return this.request("meta/markets");
   },
 
-  getStores(market) {
-    const q = market ? `?market=${encodeURIComponent(market)}` : "";
+  getStores(market_id) {
+    const q = market_id ? `?market_id=${market_id}` : "";
     return this.request(`meta/stores${q}`);
   },
 
-  // Update this in src/services/api.js
+  // --- Sales ---
   getAdminSalesAll(payload = {}) {
     const params = new URLSearchParams();
+    if (payload.market_id) params.set("market_id", payload.market_id);
+    if (payload.store_id) params.set("store_id", payload.store_id);
 
-    if (payload.market) params.set("market", payload.market);
-    if (payload.store) params.set("store", payload.store);
-
-    // Mutually Exclusive Date Logic
     if (isValidDate(payload.date)) params.set("date", payload.date);
     if (payload.date_from) params.set("date_from", payload.date_from);
     if (payload.date_to) params.set("date_to", payload.date_to);
     if (payload.specific_dates)
       params.set("specific_dates", payload.specific_dates);
-
-    // Search & Pagination
     if (payload.search) params.set("search", payload.search);
     if (payload.page) params.set("page", payload.page);
     if (payload.limit) params.set("limit", payload.limit);
 
-    // CRITICAL: Return raw request
     return this.request(`sales/all?${params.toString()}`);
   },
 
-  getAdminSalesByDate(date, market, store) {
-    const params = new URLSearchParams();
-    if (isValidDate(date)) params.set("date", date);
-    if (market) params.set("market", market);
-    if (store) params.set("store", store);
-    return this.request(`sales/by-date?${params.toString()}`);
-  },
-
   // --- Variance ---
-  // Update this inside src/services/api.js
   getVarianceAll(payload = {}) {
     const params = new URLSearchParams();
-
-    if (payload.market) params.set("market", payload.market);
-    if (payload.store) params.set("store", payload.store);
+    if (payload.market_id) params.set("market_id", payload.market_id);
+    if (payload.store_id) params.set("store_id", payload.store_id);
     if (payload.status) params.set("status", payload.status);
 
-    // Mutually Exclusive Date Logic
     if (isValidDate(payload.date)) params.set("date", payload.date);
     if (payload.date_from) params.set("date_from", payload.date_from);
     if (payload.date_to) params.set("date_to", payload.date_to);
     if (payload.specific_dates)
       params.set("specific_dates", payload.specific_dates);
-
-    // Search & Pagination
     if (payload.search) params.set("search", payload.search);
     if (payload.page) params.set("page", payload.page);
     if (payload.limit) params.set("limit", payload.limit);
 
-    // CRITICAL: Return raw request
     return this.request(`variance/all?${params.toString()}`);
   },
 
-  getVarianceByDate(date, market, store) {
-    const params = new URLSearchParams();
-    if (isValidDate(date)) params.set("date", date);
-    if (market) params.set("market", market);
-    if (store) params.set("store", store);
-    return this.request(`variance/by-date?${params.toString()}`);
-  },
-
   // --- Expenses ---
-  getExpensesAll(market, store, fromDate, toDate) {
+  getExpensesByDateWithMarket(payload = {}) {
     const params = new URLSearchParams();
-    if (market) params.set("market", market);
-    if (store) params.set("store", store);
-    if (fromDate) params.set("date_from", fromDate);
-    if (toDate) params.set("date_to", toDate);
-    return this.request(`expenses?${params.toString()}`);
-  },
+    if (payload.market_id) params.set("market_id", payload.market_id);
+    if (payload.store_id) params.set("store_id", payload.store_id);
+    if (isValidDate(payload.date)) params.set("date", payload.date);
+    if (payload.page) params.set("page", payload.page);
+    if (payload.limit) params.set("limit", payload.limit);
+    if (payload.search) params.set("search", payload.search);
 
-  getExpensesByDateWithMarket({ date, market, store, page, limit, search }) {
-    const params = new URLSearchParams();
-    if (isValidDate(date)) params.set("date", date);
-    if (market) params.set("market", market);
-    if (store) params.set("store", store);
-    if (page) params.set("page", page);
-    if (limit) params.set("limit", limit);
-    if (search) params.set("search", search);
-    // Returns full object { data, summary, pagination }
     return this.request(`expenses?${params.toString()}`);
   },
 
@@ -207,7 +154,6 @@ const api = {
         : amount == null
           ? null
           : String(amount).trim() || null;
-
     return this.request("expenses", {
       method: "POST",
       body: JSON.stringify({ ...payload, amount: normalizedAmount }),
@@ -224,7 +170,6 @@ const api = {
       headers,
       body: formData,
     });
-
     if (!res.ok) {
       const errData = await res
         .json()
@@ -234,289 +179,54 @@ const api = {
     return res.json();
   },
 
-  getExpenseApprovals({
-    date,
-    market,
-    status,
-    store,
-    audit_status,
-    date_from,
-    date_to,
-    search,
-    page,
-    limit,
-    specific_dates,
-  } = {}) {
+  getExpenseApprovals(payload = {}) {
     const params = new URLSearchParams();
-    if (isValidDate(date)) params.set("date", date);
-    if (market) params.set("market", market);
-    if (status) params.set("status", status);
-    if (store) params.set("store", store);
-    if (audit_status) params.set("audit_status", audit_status);
-    if (date_from) params.set("date_from", date_from);
-    if (date_to) params.set("date_to", date_to);
-    if (search) params.set("search", search);
-    if (page) params.set("page", page);
-    if (limit) params.set("limit", limit);
-
-    // 🔥 YOU MUST ADD THIS LINE SO THE API ACTUALLY SENDS THE DATES!
-    if (specific_dates) params.set("specific_dates", specific_dates);
+    if (payload.market_id) params.set("market_id", payload.market_id);
+    if (payload.store_id) params.set("store_id", payload.store_id);
+    if (isValidDate(payload.date)) params.set("date", payload.date);
+    if (payload.status) params.set("status", payload.status);
+    if (payload.audit_status) params.set("audit_status", payload.audit_status);
+    if (payload.date_from) params.set("date_from", payload.date_from);
+    if (payload.date_to) params.set("date_to", payload.date_to);
+    if (payload.search) params.set("search", payload.search);
+    if (payload.page) params.set("page", payload.page);
+    if (payload.limit) params.set("limit", payload.limit);
+    if (payload.specific_dates)
+      params.set("specific_dates", payload.specific_dates);
 
     return this.request(`expense-approvals?${params.toString()}`);
   },
 
-  // 🔥 UPDATED: Added date and market to support Month-End Lock
-  approveExpense(id, reason = "", date, market) {
+  approveExpense(id, reason = "", date, market_id) {
     return this.request(`expense-approvals/${id}/approve`, {
       method: "POST",
-      body: JSON.stringify({ reason, date, market }),
+      body: JSON.stringify({ reason, date, market_id }),
     });
   },
 
-  // 🔥 UPDATED: Added date and market to support Month-End Lock
-  rejectExpense(id, reason = "", date, market) {
+  rejectExpense(id, reason = "", date, market_id) {
     return this.request(`expense-approvals/${id}/reject`, {
       method: "POST",
-      body: JSON.stringify({ reason, date, market }),
+      body: JSON.stringify({ reason, date, market_id }),
     });
   },
 
-  // 🔥 UPDATED: Added date and market to support Month-End Lock
-  auditExpense(id, date, market) {
+  auditExpense(id, date, market_id) {
     return this.request(`expense-approvals/${id}/audit`, {
       method: "POST",
-      body: JSON.stringify({ date, market }),
+      body: JSON.stringify({ date, market_id }),
     });
   },
 
-  // 🔥 UPDATED: Added date and market to support Month-End Lock
-  resetAuditExpense(id, date, market) {
-    return this.request(`expense-approvals/${id}/audit-reset`, {
-      method: "POST",
-      body: JSON.stringify({ date, market }),
-    });
-  },
-
-  // Update this inside src/services/api.js
+  // --- Till (Cashflow) ---
   listTill(payload = {}) {
     const params = new URLSearchParams();
 
-    if (payload.market) params.set("market", payload.market);
-    if (payload.store) params.set("store", payload.store);
+    // Ensure we send IDs as integers
+    if (payload.market_id) params.set("market_id", payload.market_id);
+    if (payload.store_id) params.set("store_id", payload.store_id);
 
-    // 🔥 Mutually Exclusive Date Logic
-    if (isValidDate(payload.date)) params.set("date", payload.date);
-    if (payload.date_from) params.set("date_from", payload.date_from);
-    if (payload.date_to) params.set("date_to", payload.date_to);
-    if (payload.specific_dates)
-      params.set("specific_dates", payload.specific_dates);
-
-    // 🔥 Search & Pagination
-    if (payload.search) params.set("search", payload.search);
-    if (payload.page) params.set("page", payload.page);
-    if (payload.limit) params.set("limit", payload.limit);
-
-    // ⚠️ CRITICAL: Return raw request so component can read .data, .summary, and .pagination
-    return this.request(`cashflow?${params.toString()}`);
-  },
-
-  createTill(payload) {
-    return this.request("cashflow", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
-  },
-
-  // --- Payroll Expenses ---
-  getPayrollExpenses(payload = {}) {
-    const params = new URLSearchParams();
-
-    // Standard filters
-    if (payload.market) params.set("market", payload.market);
-    if (payload.store) params.set("store", payload.store);
-    if (payload.category) params.set("category", payload.category);
-    if (payload.status) params.set("status", payload.status);
-    if (payload.audit_status) params.set("audit_status", payload.audit_status);
-    if (payload.payment_status)
-      params.set("payment_status", payload.payment_status); // 🔥 ADDED: Payment Status
-    if (payload.date_period) params.set("date_period", payload.date_period);
-
-    // 🔥 NEW: Mutually Exclusive Date Logic
-    if (isValidDate(payload.date)) params.set("date", payload.date);
-    if (payload.date_from) params.set("date_from", payload.date_from);
-    if (payload.date_to) params.set("date_to", payload.date_to);
-    if (payload.specific_dates)
-      params.set("specific_dates", payload.specific_dates);
-
-    // 🔥 NEW: Search & Pagination
-    if (payload.search) params.set("search", payload.search);
-    if (payload.page) params.set("page", payload.page);
-    if (payload.limit) params.set("limit", payload.limit);
-
-    // ⚠️ CRITICAL: Return the raw request so the frontend can access .data, .summary, and .pagination
-    return this.request(`payroll-expenses?${params.toString()}`);
-  },
-
-  createPayrollExpense(payload) {
-    return this.request("payroll-expenses", {
-      method: "POST",
-      body: JSON.stringify(payload), // payload already contains date and market from the form
-    });
-  },
-
-  updatePayrollExpense(id, payload) {
-    return this.request(`payroll-expenses/${id}`, {
-      method: "PUT",
-      body: JSON.stringify(payload), // payload already contains date and market from the form
-    });
-  },
-
-  // 🔥 UPDATED: Added date and market to support Month-End Lock
-  approvePayrollExpense(id, reason = "", date, market) {
-    return this.request(`payroll-expenses/${id}/approve`, {
-      method: "POST",
-      body: JSON.stringify({ reason, date, market }),
-    });
-  },
-
-  // 🔥 UPDATED: Added date and market to support Month-End Lock
-  rejectPayrollExpense(id, reason = "", date, market) {
-    return this.request(`payroll-expenses/${id}/reject`, {
-      method: "POST",
-      body: JSON.stringify({ reason, date, market }),
-    });
-  },
-
-  // 🔥 UPDATED: Added date and market to support Month-End Lock
-  auditPayrollExpense(id, date, market) {
-    return this.request(`payroll-expenses/${id}/audit`, {
-      method: "POST",
-      body: JSON.stringify({ date, market }),
-    });
-  },
-
-  // 🔥 UPDATED: Added date and market to support Month-End Lock
-  resetAuditPayrollExpense(id, date, market) {
-    return this.request(`payroll-expenses/${id}/audit-reset`, {
-      method: "POST",
-      body: JSON.stringify({ date, market }),
-    });
-  },
-
-  // Payload here typically contains { notes: "..." }, ensure you pass { notes, date, market } from the UI
-  issuePayrollExpense(id, payload) {
-    return this.request(`payroll-expenses/${id}/issue`, {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
-  },
-
-  getExpensesGroupedByUniqueId(payload = {}) {
-    const params = new URLSearchParams();
-    if (payload.market) params.set("market", payload.market);
-    if (payload.store) params.set("store", payload.store);
-    if (payload.date_from) params.set("date_from", payload.date_from);
-    if (payload.date_to) params.set("date_to", payload.date_to);
-    return this.request(`expenses/grouped-by-unique?${params.toString()}`);
-  },
-
-  getPayrollGroupedByUniqueId(payload = {}) {
-    const params = new URLSearchParams();
-    if (payload.market) params.set("market", payload.market);
-    if (payload.store) params.set("store", payload.store);
-    if (payload.date_from) params.set("date_from", payload.date_from);
-    if (payload.date_to) params.set("date_to", payload.date_to);
-    if (payload.category) params.set("category", payload.category);
-    return this.request(
-      `payroll-expenses/grouped-by-unique?${params.toString()}`,
-    );
-  },
-
-  // --- In Hand Cash (Market Wallet) ---
-  // Update this inside src/services/api.js
-  listMarketCash(payload = {}) {
-    const params = new URLSearchParams();
-
-    if (payload.market) params.set("market", payload.market);
-    if (payload.store) params.set("store", payload.store);
-    if (payload.status && payload.status !== "all")
-      params.set("status", payload.status);
-
-    // 🔥 Mutually Exclusive Date Logic
-    if (isValidDate(payload.date)) params.set("date", payload.date);
-    if (payload.date_from) params.set("date_from", payload.date_from);
-    if (payload.date_to) params.set("date_to", payload.date_to);
-    if (payload.specific_dates)
-      params.set("specific_dates", payload.specific_dates);
-
-    // 🔥 Search & Pagination
-    if (payload.search) params.set("search", payload.search);
-    if (payload.page) params.set("page", payload.page);
-    if (payload.limit) params.set("limit", payload.limit);
-
-    // ⚠️ CRITICAL: Return raw request so the component can read .data, .summary, and .pagination
-    return this.request(`market-cash?${params.toString()}`);
-  },
-
-  createMarketCash(payload) {
-    return this.request("market-cash", {
-      method: "POST",
-      body: JSON.stringify(payload), // payload already contains date and market from the form
-    });
-  },
-
-  // 🔥 UPDATED: Added date and market to support Month-End Lock
-  approveMarketCash(id, reason = "", date, market) {
-    return this.request(`market-cash/${id}/approve`, {
-      method: "POST",
-      body: JSON.stringify({ reason, date, market }),
-    });
-  },
-
-  // 🔥 UPDATED: Added date and market to support Month-End Lock
-  rejectMarketCash(id, reason = "", date, market) {
-    return this.request(`market-cash/${id}/reject`, {
-      method: "POST",
-      body: JSON.stringify({ reason, date, market }),
-    });
-  },
-
-  // 🔥 UPDATED: Added date and market to support Month-End Lock
-  auditMarketCash(id, date, market) {
-    return this.request(`market-cash/${id}/audit`, {
-      method: "POST",
-      body: JSON.stringify({ date, market }), // Needs to be sent as JSON body now
-    });
-  },
-
-  // --- Notifications ---
-  getNotifications(market) {
-    const params = new URLSearchParams();
-    if (market) {
-      const normalizedMarket = String(market).toLowerCase().trim();
-      params.set("market", normalizedMarket);
-    }
-    return this.request(`notifications?${params.toString()}`);
-  },
-
-  dismissNotification(id) {
-    return this.request(`notifications/${id}/dismiss`, { method: "POST" });
-  },
-
-  clearAllNotifications(market) {
-    return this.request("notifications/clear-all", {
-      method: "POST",
-      body: JSON.stringify({ market }),
-    });
-  },
-
-  // --- Dashboard ---
-  getDashboard(payload = {}) {
-    const params = new URLSearchParams();
-    if (payload.market) params.set("market", payload.market);
-    if (payload.store) params.set("store", payload.store);
-
-    // Mutually Exclusive Dates
+    // Date filters
     if (payload.date_from) params.set("date_from", payload.date_from);
     if (payload.date_to) params.set("date_to", payload.date_to);
     if (payload.specific_dates)
@@ -527,92 +237,91 @@ const api = {
     if (payload.page) params.set("page", payload.page);
     if (payload.limit) params.set("limit", payload.limit);
 
-    // ⚠️ CRITICAL: Return the raw response object
-    return this.request(`dashboard/combined?${params.toString()}`);
+    return this.request(`cashflow?${params.toString()}`);
   },
-  // ==========================================
-  // 💰 COMMISSION API METHODS
-  // ==========================================
 
-  // --- Commissions ---
-  getCommissions(payload = {}) {
+  // 2. Create Till Entry (Matches POST in cashflow.controller)
+  createTill(payload) {
+    // Backend expects market_id and store_id as integers
+    const sanitizedPayload = {
+      ...payload,
+      market_id: payload.market_id
+        ? parseInt(payload.market_id, 10)
+        : undefined,
+      store_id: payload.store_id ? parseInt(payload.store_id, 10) : undefined,
+    };
+
+    return this.request("cashflow", {
+      method: "POST",
+      body: JSON.stringify(sanitizedPayload),
+    });
+  },
+
+  // --- Payroll ---
+  getPayrollExpenses(payload = {}) {
     const params = new URLSearchParams();
-
-    // Standard Filters
-    if (payload.market) params.set("market", payload.market);
-    if (payload.store) params.set("store", payload.store);
-    if (payload.status && payload.status !== "all")
-      params.set("status", payload.status);
-    if (payload.audit_status && payload.audit_status !== "all")
-      params.set("audit_status", payload.audit_status);
+    if (payload.market_id) params.set("market_id", payload.market_id);
+    if (payload.store_id) params.set("store_id", payload.store_id);
+    if (payload.category) params.set("category", payload.category);
+    if (payload.status) params.set("status", payload.status);
+    if (payload.audit_status) params.set("audit_status", payload.audit_status);
     if (payload.payment_status)
       params.set("payment_status", payload.payment_status);
-
-    // Mutually Exclusive Date Logic
-    if (payload.date) params.set("date", payload.date);
+    if (payload.date_period) params.set("date_period", payload.date_period);
+    if (isValidDate(payload.date)) params.set("date", payload.date);
     if (payload.date_from) params.set("date_from", payload.date_from);
     if (payload.date_to) params.set("date_to", payload.date_to);
     if (payload.specific_dates)
       params.set("specific_dates", payload.specific_dates);
-
-    // Search & Pagination
     if (payload.search) params.set("search", payload.search);
     if (payload.page) params.set("page", payload.page);
     if (payload.limit) params.set("limit", payload.limit);
 
-    // CRITICAL: Return raw request to capture { data, summary, pagination }
-    return this.request(`commission?${params.toString()}`);
+    return this.request(`payroll-expenses?${params.toString()}`);
   },
 
-  createCommission(payload) {
-    return this.request("commission", {
-      method: "POST",
-      body: JSON.stringify(payload), // payload already contains date and market
-    });
-  },
-
-  // 🔥 FIXED: Changed `commissions` to `commission` to match the others
-  updateCommission(id, payload) {
-    return this.request(`commission/${id}`, {
-      method: "PUT",
-      body: JSON.stringify(payload), // payload already contains date and market
-    });
-  },
-
-  // 🔥 UPDATED: Added date and market to support Month-End Lock
-  approveCommission(id, reason = "", date, market) {
-    return this.request(`commission/${id}/approve`, {
-      method: "POST",
-      body: JSON.stringify({ reason, date, market }),
-    });
-  },
-
-  // 🔥 UPDATED: Added date and market to support Month-End Lock
-  rejectCommission(id, reason = "", date, market) {
-    return this.request(`commission/${id}/reject`, {
-      method: "POST",
-      body: JSON.stringify({ reason, date, market }),
-    });
-  },
-
-  // 🔥 UPDATED: Added date and market to support Month-End Lock
-  auditCommission(id, date, market) {
-    return this.request(`commission/${id}/audit`, {
-      method: "POST",
-      body: JSON.stringify({ date, market }),
-    });
-  },
-
-  // 🔥 NEW: Added this to connect to the "raiseIssue" backend controller!
-  // Expects payload to be { notes: "...", date: "...", market: "..." }
-  issueCommission(id, payload) {
-    return this.request(`commission/${id}/issue`, {
+  createPayrollExpense(payload) {
+    return this.request("payroll-expenses", {
       method: "POST",
       body: JSON.stringify(payload),
     });
   },
 
-  // Payload expects { add_amount_by_mm, reason_for_add_amount, date, market }
+  updatePayrollExpense(id, payload) {
+    return this.request(`payroll-expenses/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  approvePayrollExpense(id, reason = "", date, market_id) {
+    return this.request(`payroll-expenses/${id}/approve`, {
+      method: "POST",
+      body: JSON.stringify({ reason, date, market_id }),
+    });
+  },
+
+  rejectPayrollExpense(id, reason = "", date, market_id) {
+    return this.request(`payroll-expenses/${id}/reject`, {
+      method: "POST",
+      body: JSON.stringify({ reason, date, market_id }),
+    });
+  },
+
+  auditPayrollExpense(id, date, market_id) {
+    return this.request(`payroll-expenses/${id}/audit`, {
+      method: "POST",
+      body: JSON.stringify({ date, market_id }),
+    });
+  },
+
+  issuePayrollExpense(id, payload) {
+    return this.request(`payroll-expenses/${id}/issue`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
   markPayrollPaid(id, payload) {
     return this.request(`payroll-expenses/${id}/mark-paid`, {
       method: "POST",
@@ -620,33 +329,180 @@ const api = {
     });
   },
 
-  // Payload expects { add_amount_by_mm, reason_for_add_amount, date, market }
+  // --- Market Cash ---
+  listMarketCash(payload = {}) {
+    const params = new URLSearchParams();
+
+    if (payload.market_id) params.set("market_id", payload.market_id);
+    if (payload.store_id) params.set("store_id", payload.store_id);
+
+    if (payload.status && payload.status !== "all")
+      params.set("status", payload.status);
+
+    // 🔥 THE FIX: Added audit_status to the API request
+    if (payload.audit_status && payload.audit_status !== "all")
+      params.set("audit_status", payload.audit_status);
+
+    if (isValidDate(payload.date)) params.set("date", payload.date);
+    if (payload.date_from) params.set("date_from", payload.date_from);
+    if (payload.date_to) params.set("date_to", payload.date_to);
+    if (payload.specific_dates)
+      params.set("specific_dates", payload.specific_dates);
+    if (payload.search) params.set("search", payload.search);
+    if (payload.page) params.set("page", payload.page);
+    if (payload.limit) params.set("limit", payload.limit);
+
+    return this.request(`market-cash?${params.toString()}`);
+  },
+
+  createMarketCash(payload) {
+    return this.request("market-cash", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  approveMarketCash(id, reason = "", date, market_id) {
+    return this.request(`market-cash/${id}/approve`, {
+      method: "POST",
+      body: JSON.stringify({ reason, date, market_id }),
+    });
+  },
+
+  rejectMarketCash(id, reason = "", date, market_id) {
+    return this.request(`market-cash/${id}/reject`, {
+      method: "POST",
+      body: JSON.stringify({ reason, date, market_id }),
+    });
+  },
+
+  auditMarketCash(id, date, market_id) {
+    return this.request(`market-cash/${id}/audit`, {
+      method: "POST",
+      body: JSON.stringify({ date, market_id }),
+    });
+  },
+
+  // --- Notifications ---
+  getNotifications(payload = {}) {
+    const params = new URLSearchParams();
+    if (payload.market_id) params.set("market_id", payload.market_id);
+    return this.request(`notifications?${params.toString()}`);
+  },
+
+  dismissNotification(id) {
+    return this.request(`notifications/${id}/dismiss`, { method: "POST" });
+  },
+
+  clearAllNotifications(market_id) {
+    return this.request("notifications/clear-all", {
+      method: "POST",
+      body: JSON.stringify({ market_id }),
+    });
+  },
+
+  // --- Dashboard ---
+  getDashboard(payload = {}) {
+    const params = new URLSearchParams();
+    if (payload.market_id) params.set("market_id", payload.market_id);
+    if (payload.store_id) params.set("store_id", payload.store_id);
+    if (payload.date_from) params.set("date_from", payload.date_from);
+    if (payload.date_to) params.set("date_to", payload.date_to);
+    if (payload.specific_dates)
+      params.set("specific_dates", payload.specific_dates);
+    if (payload.search) params.set("search", payload.search);
+    if (payload.page) params.set("page", payload.page);
+    if (payload.limit) params.set("limit", payload.limit);
+
+    return this.request(`dashboard/combined?${params.toString()}`);
+  },
+
+  getPendingCounts(payload = {}) {
+    const params = new URLSearchParams();
+    if (payload.market_id) params.set("market_id", payload.market_id);
+    return this.request(`dashboard/pending-counts?${params.toString()}`);
+  },
+
+  // --- Commissions ---
+  getCommissions(payload = {}) {
+    const params = new URLSearchParams();
+    if (payload.market_id) params.set("market_id", payload.market_id);
+    if (payload.store_id) params.set("store_id", payload.store_id);
+    if (payload.status && payload.status !== "all")
+      params.set("status", payload.status);
+    if (payload.audit_status && payload.audit_status !== "all")
+      params.set("audit_status", payload.audit_status);
+    if (payload.payment_status)
+      params.set("payment_status", payload.payment_status);
+    if (payload.date) params.set("date", payload.date);
+    if (payload.date_from) params.set("date_from", payload.date_from);
+    if (payload.date_to) params.set("date_to", payload.date_to);
+    if (payload.specific_dates)
+      params.set("specific_dates", payload.specific_dates);
+    if (payload.search) params.set("search", payload.search);
+    if (payload.page) params.set("page", payload.page);
+    if (payload.limit) params.set("limit", payload.limit);
+
+    return this.request(`commission?${params.toString()}`);
+  },
+
+  createCommission(payload) {
+    return this.request("commission", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  updateCommission(id, payload) {
+    return this.request(`commission/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  approveCommission(id, reason = "", date, market_id) {
+    return this.request(`commission/${id}/approve`, {
+      method: "POST",
+      body: JSON.stringify({ reason, date, market_id }),
+    });
+  },
+
+  rejectCommission(id, reason = "", date, market_id) {
+    return this.request(`commission/${id}/reject`, {
+      method: "POST",
+      body: JSON.stringify({ reason, date, market_id }),
+    });
+  },
+
+  auditCommission(id, date, market_id) {
+    return this.request(`commission/${id}/audit`, {
+      method: "POST",
+      body: JSON.stringify({ date, market_id }),
+    });
+  },
+
+  issueCommission(id, payload) {
+    return this.request(`commission/${id}/issue`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
   markCommissionPaid(id, payload) {
     return this.request(`commission/${id}/mark-paid`, {
       method: "POST",
       body: JSON.stringify(payload || {}),
     });
   },
-  getPendingCounts(payload = {}) {
-    const params = new URLSearchParams();
 
-    if (payload.market) params.set("market", payload.market);
-
-    return this.request(`dashboard/pending-counts?${params.toString()}`);
-  },
-  // Add this inside src/services/api.js
-
-  // ==========================================
-  // MONTHLY RECONCILIATIONS (CLOSED BOOKS)
-  // ==========================================
-
-  getReconciliations(market) {
-    const params = market ? `?market=${encodeURIComponent(market)}` : "";
+  // --- Monthly Reconciliations ---
+  getReconciliations(market_id) {
+    const params = market_id ? `?market_id=${market_id}` : "";
     return this.request(`reconciliations${params}`);
   },
 
-  getOpeningBalance(market, year, month) {
-    const params = new URLSearchParams({ market, year, month }).toString();
+  getOpeningBalance(market_id, year, month) {
+    const params = new URLSearchParams({ market_id, year, month }).toString();
     return this.request(`reconciliations/opening-balance?${params}`);
   },
 
@@ -658,8 +514,146 @@ const api = {
   },
 
   reopenBook(id) {
-    return this.request(`reconciliations/reopen/${id}`, {
-      method: "DELETE",
+    return this.request(`reconciliations/reopen/${id}`, { method: "DELETE" });
+  },
+
+  // ==========================================
+  // PHASE 6: ADMIN MANAGEMENT
+  // ==========================================
+
+  // -- Markets --
+  getAdminMarkets() {
+    return this.request("admin/markets");
+  },
+  createAdminMarket(payload) {
+    return this.request("admin/markets", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+  updateAdminMarket(id, payload) {
+    return this.request(`admin/markets/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  // -- Stores --
+  getAdminStores() {
+    return this.request("admin/stores");
+  },
+  createAdminStore(payload) {
+    return this.request("admin/stores", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+  updateAdminStore(id, payload) {
+    return this.request(`admin/stores/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  // -- Employees --
+  getAdminEmployees(storeId = null) {
+    const endpoint = storeId
+      ? `admin/employees?store_id=${storeId}`
+      : "admin/employees";
+    return this.request(endpoint);
+  },
+  createAdminEmployee(payload) {
+    return this.request("admin/employees", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+  updateAdminEmployee(id, payload) {
+    return this.request(`admin/employees/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  // -- Users --
+  getAdminUsers() {
+    return this.request("admin/users");
+  },
+  createAdminUser(payload) {
+    return this.request("admin/users", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+  updateAdminUser(id, payload) {
+    return this.request(`admin/users/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+  },
+  // --- Auth ---
+  login(email, password) {
+    return this.request("auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+    });
+  },
+
+  // 🔥 ADD THIS METHOD
+  registerCompany(payload) {
+    return this.request("auth/register-company", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+  bulkCreatePayroll(payload) {
+    return this.request("payroll-expenses/bulk", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+  bulkCreateCommission(payload) {
+    return this.request("commission/bulk", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+  // Add this inside your api.js file
+  // --- TILL (CASHFLOW) ENDPOINTS ---
+
+  getCashflow: async function (params) {
+    // Filter out undefined, null, or empty string values
+    const cleanParams = Object.fromEntries(
+      Object.entries(params).filter(
+        ([_, value]) => value !== undefined && value !== null && value !== "",
+      ),
+    );
+
+    // Convert clean params to query string
+    const query = new URLSearchParams(cleanParams).toString();
+    return this.request(`/cashflow?${query}`);
+  },
+
+  createCashflow: async function (data) {
+    return this.request("/cashflow", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  },
+
+  getPreviousTillBalance: async function (store_id, date) {
+    // Construct query string for the GET request
+    return this.request(
+      `/cashflow/previous-balance?store_id=${store_id}&date=${date}`,
+    );
+  },
+  // Add this inside your API object
+  // --- TILL (CASHFLOW) ENDPOINTS ---
+
+  auditTill(id, payload) {
+    return this.request(`cashflow/till/${id}/audit`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
     });
   },
 };
