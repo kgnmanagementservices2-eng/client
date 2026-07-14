@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import toast from "react-hot-toast";
 import { useGlobalState } from "../context/GlobalStateContext.jsx";
+import { useAuth } from "../context/AuthContext.jsx";
 import api from "../services/api.js";
 import { toISO, fmt2, num, downloadCSV } from "../utils/utils.js";
 import TruncatedTooltip from "../components/TruncatedTooltip.jsx";
@@ -22,8 +23,153 @@ function pad2(n) {
   return String(n).padStart(2, "0");
 }
 
+// --- INLINE SVG ICONS ---
+const EditIcon = ({ className = "w-4 h-4" }) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={className}
+  >
+    <path d="M12 20h9" />
+    <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+  </svg>
+);
+
+// --- EDIT AMOUNT MODAL COMPONENT ---
+const EditAmountModal = ({
+  isOpen,
+  onClose,
+  expense,
+  onSave,
+  canEnterNegative,
+}) => {
+  const [amount, setAmount] = useState("");
+  const [expFile, setExpFile] = useState(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (expense) {
+      setAmount(String(num(expense.amount_numeric ?? expense.amount)));
+      setExpFile(null); // Reset file on open
+    }
+  }, [expense]);
+
+  if (!isOpen || !expense) return null;
+
+  const handleAmountChange = (e) => {
+    const value = e.target.value;
+    const regex = canEnterNegative ? /[^0-9.,$-]/g : /[^0-9.,$]/g;
+    const cleaned = value.replace(regex, "");
+    setAmount(cleaned);
+  };
+
+  const parsedAmount = parseFloat(amount.replace(/[$,\s]/g, "")) || 0;
+
+  // Check if the original expense already has a receipt attached
+  const hasExistingReceipt = !!(
+    expense.upload_url ||
+    expense.uploadurl ||
+    expense.receipt_url
+  );
+  // Require receipt if amount > 25 AND there is no existing receipt
+  const needsReceipt = parsedAmount > 25 && !hasExistingReceipt;
+
+  const handleSave = async () => {
+    if (isNaN(parsedAmount) || parsedAmount === 0) {
+      toast.error("Please enter a valid amount.");
+      return;
+    }
+    if (parsedAmount < 0 && !canEnterNegative) {
+      toast.error("Amount must be positive.");
+      return;
+    }
+    if (needsReceipt && !expFile) {
+      toast.error("A receipt is required for amounts over $25.");
+      return;
+    }
+
+    setIsSaving(true);
+    await onSave(expense.id, parsedAmount, expFile);
+    setIsSaving(false);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden animate-fadeIn">
+        <div className="px-6 py-4 border-b border-slate-100 bg-slate-50">
+          <h3 className="text-lg font-bold text-slate-800">
+            Edit Expense Amount
+          </h3>
+        </div>
+        <div className="p-6">
+          <div className="mb-4">
+            <p className="text-xs text-slate-500 font-medium mb-1">
+              Editing expense for:
+            </p>
+            <p className="text-sm font-bold text-slate-700 capitalize">
+              {expense.category} - {expense.store || "No Store"}
+            </p>
+          </div>
+
+          <label className="block text-[11px] uppercase font-bold text-slate-500 mb-1.5 tracking-wider">
+            New Amount *
+          </label>
+          <input
+            type="text"
+            value={amount}
+            onChange={handleAmountChange}
+            className="border border-slate-300 rounded-lg px-3 py-2 text-base w-full outline-none transition-shadow font-mono focus:ring-2 focus:ring-indigo-500"
+            placeholder="0.00"
+            autoFocus
+          />
+
+          {/* Conditionally show file upload if amount crosses the $25 threshold */}
+          {needsReceipt && (
+            <div className="mt-4 animate-fadeIn">
+              <label className="block text-[11px] uppercase font-bold text-slate-500 mb-1.5 tracking-wider">
+                Receipt File <span className="text-rose-500 ml-1">*</span>
+              </label>
+              <input
+                type="file"
+                accept=".jpg,.jpeg,.png,.pdf,.csv,.xls,.xlsx,image/jpeg,image/png,application/pdf"
+                onChange={(e) => setExpFile(e.target.files[0] || null)}
+                className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm w-full outline-none transition-shadow bg-white focus:ring-2 focus:ring-rose-500"
+              />
+              <p className="mt-1 text-xs text-rose-600 font-medium">
+                Receipt required since new amount exceeds $25.
+              </p>
+            </div>
+          )}
+        </div>
+        <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
+          <button
+            onClick={onClose}
+            disabled={isSaving}
+            className="px-4 py-2 rounded-lg font-bold text-sm text-slate-600 hover:bg-slate-200 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={isSaving || (needsReceipt && !expFile)}
+            className="px-5 py-2 rounded-lg font-bold text-sm bg-indigo-600 text-white hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isSaving ? "Saving..." : "Save Changes"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export default function ExpenseHistoryPage() {
   const { selectedMarket, selectedStore, markets } = useGlobalState();
+  const { user } = useAuth();
   const { y: curY, m: curM } = useMemo(getCurrentYearMonth, []);
 
   const currentMarketObj = (markets || []).find(
@@ -54,6 +200,15 @@ export default function ExpenseHistoryPage() {
   // Search State
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedSpecificDates, setSelectedSpecificDates] = useState([]);
+
+  // --- Edit Modal State ---
+  const [editingExpense, setEditingExpense] = useState(null);
+
+  const canEnterNegative = useMemo(() => {
+    return ["admin", "super_admin", "expense_commission_manager"].includes(
+      user?.role,
+    );
+  }, [user]);
 
   // Auto-clear selected dates when the Month or Year changes
   useEffect(() => {
@@ -122,7 +277,7 @@ export default function ExpenseHistoryPage() {
       }
 
       const payload = {
-        // 🔥 FIX 1: Explicit Integer Casting for IDOR & Data Coercion Safety
+        // FIX 1: Explicit Integer Casting for IDOR & Data Coercion Safety
         market_id: selectedMarket ? parseInt(selectedMarket, 10) : undefined,
         store_id: fStore ? parseInt(fStore, 10) : undefined,
         status: apiStatus,
@@ -170,6 +325,33 @@ export default function ExpenseHistoryPage() {
     fetchFiltered();
   }, [fetchFiltered]);
 
+  // --- Handle Edit Update ---
+  const handleUpdateAmount = async (id, newAmount, file) => {
+    try {
+      let finalUrl = undefined;
+
+      if (file) {
+        const formData = new FormData();
+        formData.append("file", file);
+        const up = await api.uploadExpenseFile(formData);
+        finalUrl = up.url || null;
+      }
+
+      await api.updateExpense(id, {
+        amount: newAmount,
+        ...(finalUrl && { uploadurl: finalUrl }),
+      });
+
+      toast.success("Amount updated successfully!");
+      setEditingExpense(null);
+      fetchFiltered(); // Refresh table
+    } catch (err) {
+      toast.error(
+        err?.response?.data?.error || err.message || "Failed to update amount",
+      );
+    }
+  };
+
   // --- Export Logic ---
   const handleExport = () => {
     const header = [
@@ -193,7 +375,7 @@ export default function ExpenseHistoryPage() {
         r.managername ?? r.manager_name ?? r.managerName ?? r.ManagerName ?? "";
       const manager = managerVal.replaceAll(",", " ");
 
-      // 🔥 FIX 2: Bulletproof summation fallback to avoid NaN in Exports
+      // FIX 2: Bulletproof summation fallback to avoid NaN in Exports
       const amtNum = Number(r.amount) || Number(r.amount_numeric) || 0;
 
       const vals = [
@@ -444,11 +626,11 @@ export default function ExpenseHistoryPage() {
                 </tr>
               ) : (
                 rows.map((r, index) => {
-                  // 🔥 FIX 3: Robust URL Check to handle nulls and short junk strings
+                  // FIX 3: Robust URL Check to handle nulls and short junk strings
                   const url =
                     r.upload_url ?? r.uploadurl ?? r.receipt_url ?? "";
 
-                  // 🔥 FIX 2: Bulletproof summation fallback to avoid NaN
+                  // FIX 2: Bulletproof summation fallback to avoid NaN
                   const amtNum =
                     Number(r.amount) || Number(r.amount_numeric) || 0;
 
@@ -496,11 +678,21 @@ export default function ExpenseHistoryPage() {
                       <td
                         className={`px-3 py-2 text-right font-extrabold ${amtNum < 0 ? "text-rose-600" : "text-slate-900"}`}
                       >
-                        ${fmt2(amtNum)}
+                        <div className="flex items-center justify-end gap-2">
+                          <span>${fmt2(amtNum)}</span>
+                          {!isAudited && (
+                            <button
+                              onClick={() => setEditingExpense(r)}
+                              className="text-slate-400 hover:text-indigo-600 transition-colors"
+                              title="Edit Amount"
+                            >
+                              <EditIcon />
+                            </button>
+                          )}
+                        </div>
                       </td>
 
                       <td className="px-3 py-2 text-center">
-                        {/* 🔥 FIX 3 APPLIED: Validate URL length to avoid rendering empty links */}
                         {url && url.length > 5 ? (
                           <a
                             className="text-blue-600 hover:text-blue-800 underline font-medium transition-colors"
@@ -597,6 +789,14 @@ export default function ExpenseHistoryPage() {
           </div>
         </div>
       </div>
+
+      <EditAmountModal
+        isOpen={!!editingExpense}
+        onClose={() => setEditingExpense(null)}
+        expense={editingExpense}
+        onSave={handleUpdateAmount}
+        canEnterNegative={canEnterNegative}
+      />
     </section>
   );
 }

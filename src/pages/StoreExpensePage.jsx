@@ -55,6 +55,150 @@ const CATEGORY_MAP = {
   other: "other",
 };
 
+// --- INLINE SVG ICONS ---
+const EditIcon = ({ className = "w-4 h-4" }) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={className}
+  >
+    <path d="M12 20h9" />
+    <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+  </svg>
+);
+
+// --- EDIT AMOUNT MODAL COMPONENT ---
+const EditAmountModal = ({
+  isOpen,
+  onClose,
+  expense,
+  onSave,
+  canEnterNegative,
+}) => {
+  const [amount, setAmount] = useState("");
+  const [expFile, setExpFile] = useState(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (expense) {
+      setAmount(String(num(expense.amount_numeric ?? expense.amount)));
+      setExpFile(null); // Reset file on open
+    }
+  }, [expense]);
+
+  if (!isOpen || !expense) return null;
+
+  const handleAmountChange = (e) => {
+    const value = e.target.value;
+    const regex = canEnterNegative ? /[^0-9.,$-]/g : /[^0-9.,$]/g;
+    const cleaned = value.replace(regex, "");
+    setAmount(cleaned);
+  };
+
+  const parsedAmount = parseFloat(amount.replace(/[$,\s]/g, "")) || 0;
+
+  // Check if the original expense already has a receipt attached
+  const hasExistingReceipt = !!(
+    expense.upload_url ||
+    expense.uploadurl ||
+    expense.receipt_url
+  );
+  // Require receipt if amount > 25 AND there is no existing receipt
+  const needsReceipt = parsedAmount > 25 && !hasExistingReceipt;
+
+  const handleSave = async () => {
+    if (isNaN(parsedAmount) || parsedAmount === 0) {
+      toast.error("Please enter a valid amount.");
+      return;
+    }
+    if (parsedAmount < 0 && !canEnterNegative) {
+      toast.error("Amount must be positive.");
+      return;
+    }
+    if (needsReceipt && !expFile) {
+      toast.error("A receipt is required for amounts over $25.");
+      return;
+    }
+
+    setIsSaving(true);
+    await onSave(expense.id, parsedAmount, expFile);
+    setIsSaving(false);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden animate-fadeIn">
+        <div className="px-6 py-4 border-b border-slate-100 bg-slate-50">
+          <h3 className="text-lg font-bold text-slate-800">
+            Edit Expense Amount
+          </h3>
+        </div>
+        <div className="p-6">
+          <div className="mb-4">
+            <p className="text-xs text-slate-500 font-medium mb-1">
+              Editing expense for:
+            </p>
+            <p className="text-sm font-bold text-slate-700 capitalize">
+              {expense.category} - {expense.store || "No Store"}
+            </p>
+          </div>
+
+          <label className="block text-[11px] uppercase font-bold text-slate-500 mb-1.5 tracking-wider">
+            New Amount *
+          </label>
+          <input
+            type="text"
+            value={amount}
+            onChange={handleAmountChange}
+            className="border border-slate-300 rounded-lg px-3 py-2 text-base w-full outline-none transition-shadow font-mono focus:ring-2 focus:ring-indigo-500"
+            placeholder="0.00"
+            autoFocus
+          />
+
+          {/* Conditionally show file upload if amount crosses the $25 threshold */}
+          {needsReceipt && (
+            <div className="mt-4 animate-fadeIn">
+              <label className="block text-[11px] uppercase font-bold text-slate-500 mb-1.5 tracking-wider">
+                Receipt File <span className="text-rose-500 ml-1">*</span>
+              </label>
+              <input
+                type="file"
+                accept=".jpg,.jpeg,.png,.pdf,.csv,.xls,.xlsx,image/jpeg,image/png,application/pdf"
+                onChange={(e) => setExpFile(e.target.files[0] || null)}
+                className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm w-full outline-none transition-shadow bg-white focus:ring-2 focus:ring-rose-500"
+              />
+              <p className="mt-1 text-xs text-rose-600 font-medium">
+                Receipt required since new amount exceeds $25.
+              </p>
+            </div>
+          )}
+        </div>
+        <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
+          <button
+            onClick={onClose}
+            disabled={isSaving}
+            className="px-4 py-2 rounded-lg font-bold text-sm text-slate-600 hover:bg-slate-200 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={isSaving || (needsReceipt && !expFile)}
+            className="px-5 py-2 rounded-lg font-bold text-sm bg-indigo-600 text-white hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isSaving ? "Saving..." : "Save Changes"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 function ExpensesTab() {
   const { selectedMarket, selectedStore, markets } = useGlobalState();
   const { user } = useAuth();
@@ -74,12 +218,15 @@ function ExpensesTab() {
   const [isLoadingRows, setIsLoadingRows] = useState(false);
 
   const [availableStores, setAvailableStores] = useState([]);
-  const [availableEmployees, setAvailableEmployees] = useState([]); // 🔥 Added Employee Fetch State
+  const [availableEmployees, setAvailableEmployees] = useState([]);
   const [expFile, setExpFile] = useState(null);
   const fileInputRef = useRef(null);
 
   const [showClosedPopup, setShowClosedPopup] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+
+  // --- Edit Modal State ---
+  const [editingExpense, setEditingExpense] = useState(null);
 
   const {
     register,
@@ -130,43 +277,29 @@ function ExpensesTab() {
     setValue("store_id", selectedStore || "");
   }, [selectedStore, setValue]);
 
-  // 🔥 Fetch Store Managers/Employees dynamically
-  // 🔥 Fetch Admins and Market Managers dynamically based on the Market
   useEffect(() => {
     let active = true;
     if (selectedMarket) {
-      // Fetch from the master users list instead of store-level employees
       api
         .request("admin/users")
         .then((res) => {
           if (!active) return;
-
-          // Depending on your axios setup, the array might be directly in res or in res.data
           const allUsers = Array.isArray(res) ? res : res?.data || [];
-
           const filteredManagers = allUsers.filter((u) => {
             const role = String(u.role || "").toLowerCase();
-
-            // 1. Always include global admins
             const isAdmin = [
               "admin",
               "super_admin",
               "expense_commission_manager",
             ].includes(role);
-
-            // 2. Include Market Managers ONLY if they are assigned to this specific market
             const isMarketManager =
               role === "market_manager" &&
               (u.market_ids || []).includes(Number(selectedMarket));
-
             return isAdmin || isMarketManager;
           });
-
-          // Optional: Sort them alphabetically for a cleaner dropdown UX
           filteredManagers.sort((a, b) =>
             (a.full_name || "").localeCompare(b.full_name || ""),
           );
-
           setAvailableEmployees(filteredManagers);
         })
         .catch(console.error);
@@ -176,7 +309,8 @@ function ExpensesTab() {
     return () => {
       active = false;
     };
-  }, [selectedMarket]); // 🔥 Changed dependency from watchedStoreId to selectedMarket
+  }, [selectedMarket]);
+
   useEffect(() => {
     setCurrentPage(1);
   }, [watchedDate, watchedStoreId, selectedMarket]);
@@ -260,7 +394,7 @@ function ExpensesTab() {
         amount: parseFloat(String(data.amount).replace(/[$,\s]/g, "")) || null,
         uploadurl: finalUrl,
         comment: data.comment,
-        manager_user_id: parseInt(data.manager_user_id, 10), // 🔥 Transmit valid User ID
+        manager_user_id: parseInt(data.manager_user_id, 10),
       };
 
       if (category === "important") {
@@ -295,6 +429,32 @@ function ExpensesTab() {
       }
     } finally {
       setIsProcessing(false);
+    }
+  };
+
+  // --- Handle Edit Submit ---
+  const handleUpdateAmount = async (id, newAmount, file) => {
+    try {
+      let finalUrl = undefined;
+
+      if (file) {
+        const formData = new FormData();
+        formData.append("file", file);
+        const up = await api.uploadExpenseFile(formData);
+        finalUrl = up.url || null;
+      }
+
+      // Pass the new URL to the backend if a file was uploaded
+      await api.updateExpense(id, {
+        amount: newAmount,
+        ...(finalUrl && { uploadurl: finalUrl }),
+      });
+
+      toast.success("Amount updated successfully!");
+      setEditingExpense(null);
+      loadExpensesForDate();
+    } catch (err) {
+      toast.error(err?.response?.data?.error || "Failed to update amount");
     }
   };
 
@@ -421,7 +581,7 @@ function ExpensesTab() {
               }
               {...register("amount", {
                 required: "Amount is required",
-                onChange: handleAmountChange, // 🔥 Bound correctly to RHF
+                onChange: handleAmountChange,
                 validate: (val) => {
                   const numVal = parseFloat(String(val).replace(/[$,\s]/g, ""));
                   if (isNaN(numVal)) return "Amount is required";
@@ -442,7 +602,6 @@ function ExpensesTab() {
             )}
           </div>
 
-          {/* 🔥 UPDATED: Replaced text input with dynamic Employee dropdown */}
           <div>
             <label className="block text-[11px] uppercase font-bold text-slate-500 mb-1.5 tracking-wider">
               Manager Name *
@@ -629,7 +788,19 @@ function ExpensesTab() {
                       <td
                         className={`px-3 py-2 text-right font-extrabold tracking-tight ${amtNum < 0 ? "text-rose-600" : "text-slate-900"}`}
                       >
-                        ${fmt2(amtNum)}
+                        <div className="flex items-center justify-end gap-2">
+                          <span>${fmt2(amtNum)}</span>
+                          {/* EDIT AMOUNT BUTTON - ONLY IF NOT AUDITED[cite: 5] */}
+                          {r.audit_status !== "audited" && (
+                            <button
+                              onClick={() => setEditingExpense(r)}
+                              className="text-slate-400 hover:text-indigo-600 transition-colors"
+                              title="Edit Amount"
+                            >
+                              <EditIcon />
+                            </button>
+                          )}
+                        </div>
                       </td>
                       <td className="px-3 py-2 text-center">
                         {url ? (
@@ -703,6 +874,14 @@ function ExpensesTab() {
       <BookClosedPopup
         isOpen={showClosedPopup}
         onClose={() => setShowClosedPopup(false)}
+      />
+
+      <EditAmountModal
+        isOpen={!!editingExpense}
+        onClose={() => setEditingExpense(null)}
+        expense={editingExpense}
+        onSave={handleUpdateAmount}
+        canEnterNegative={canEnterNegative}
       />
     </div>
   );

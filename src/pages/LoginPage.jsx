@@ -298,7 +298,7 @@ export default function LoginPage({ onNavigate }) {
               )}
             </form>
 
-            {/* <div className="mt-8 text-center">
+            <div className="mt-8 text-center">
               <button
                 type="button"
                 onClick={() => {
@@ -311,7 +311,7 @@ export default function LoginPage({ onNavigate }) {
                   ? "Already have an account? Sign in"
                   : "Don't have an account? Register Company"}
               </button>
-            </div> */}
+            </div>
           </div>
         </div>
       </div>

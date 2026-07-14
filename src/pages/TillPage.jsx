@@ -6,7 +6,7 @@ import { todayCST, fmt2, num, toISO } from "../utils/utils.js";
 import toast from "react-hot-toast";
 
 import BookClosedPopup from "../components/BookClosedPopup.jsx";
-import TruncatedTooltip from "../components/TruncatedTooltip.jsx"; // 🔥 Imported for the Reason column
+import TruncatedTooltip from "../components/TruncatedTooltip.jsx";
 
 const ROWS_PER_PAGE = 20;
 
@@ -20,6 +20,102 @@ function daysInMonth(year, month) {
 function pad2(n) {
   return String(n).padStart(2, "0");
 }
+
+// --- INLINE SVG ICONS ---
+const EditIcon = ({ className = "w-4 h-4" }) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={className}
+  >
+    <path d="M12 20h9" />
+    <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+  </svg>
+);
+
+// --- EDIT TILL MODAL COMPONENT ---
+const EditTillModal = ({ isOpen, onClose, record, onSave }) => {
+  const [amount, setAmount] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (record) {
+      setAmount(String(num(record.till_entry)));
+    }
+  }, [record]);
+
+  if (!isOpen || !record) return null;
+
+  const handleAmountChange = (e) => {
+    const value = e.target.value.replace(/[^0-9.,$-]/g, "");
+    setAmount(value);
+  };
+
+  const handleSave = async () => {
+    const parsedAmount = parseFloat(amount.replace(/[$,\s]/g, ""));
+    if (isNaN(parsedAmount)) {
+      toast.error("Please enter a valid amount.");
+      return;
+    }
+    setIsSaving(true);
+    await onSave(record.id, parsedAmount);
+    setIsSaving(false);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden animate-fadeIn">
+        <div className="px-6 py-4 border-b border-slate-100 bg-slate-50">
+          <h3 className="text-lg font-bold text-slate-800">
+            Edit Added Cash (Till Entry)
+          </h3>
+        </div>
+        <div className="p-6">
+          <div className="mb-4">
+            <p className="text-xs text-slate-500 font-medium mb-1">
+              Editing entry for:
+            </p>
+            <p className="text-sm font-bold text-slate-700 capitalize">
+              {record.store || "Store"} - {toISO(record.date)}
+            </p>
+          </div>
+          <label className="block text-[11px] uppercase font-bold text-slate-500 mb-1.5 tracking-wider">
+            New Added Amount *
+          </label>
+          <input
+            type="text"
+            value={amount}
+            onChange={handleAmountChange}
+            className="border border-slate-300 rounded-lg px-3 py-2 text-base w-full outline-none transition-shadow font-mono focus:ring-2 focus:ring-indigo-500"
+            placeholder="0.00"
+            autoFocus
+          />
+        </div>
+        <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
+          <button
+            onClick={onClose}
+            disabled={isSaving}
+            className="px-4 py-2 rounded-lg font-bold text-sm text-slate-600 hover:bg-slate-200 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={isSaving}
+            className="px-5 py-2 rounded-lg font-bold text-sm bg-indigo-600 text-white hover:bg-indigo-700 transition-colors disabled:opacity-50"
+          >
+            {isSaving ? "Saving..." : "Save Changes"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export default function TillPage() {
   const { selectedMarket, selectedStore, markets } = useGlobalState();
@@ -39,7 +135,7 @@ export default function TillPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [showClosedPopup, setShowClosedPopup] = useState(false);
 
-  // 🔥 Lockout State
+  // Lockout State
   const [lockedDate, setLockedDate] = useState(null);
 
   const {
@@ -71,6 +167,9 @@ export default function TillPage() {
   const [auditSpent, setAuditSpent] = useState("");
   const [auditReason, setAuditReason] = useState("");
   const [isAuditing, setIsAuditing] = useState(false);
+
+  // --- Edit Modal State ---
+  const [editingTillRecord, setEditingTillRecord] = useState(null);
 
   // --- History Filter State ---
   const { y: curY, m: curM } = useMemo(getCurrentYearMonth, []);
@@ -212,10 +311,7 @@ export default function TillPage() {
   };
 
   const submitAudit = async () => {
-    // 1. Safely parse the number, defaulting to 0
     const finalSpentAmount = num(auditSpent) || 0;
-
-    // 2. Safely parse the reason, defaulting to null if empty
     const finalReason = auditReason.trim() === "" ? null : auditReason.trim();
 
     if (finalSpentAmount > 0 && !finalReason) {
@@ -227,7 +323,7 @@ export default function TillPage() {
     try {
       await api.auditTill(auditModal.id, {
         spent_amount: finalSpentAmount,
-        reason_for_spending: finalReason, // Sends null instead of ""
+        reason_for_spending: finalReason,
       });
 
       toast.success("Till audited successfully!", { id: toastId });
@@ -250,6 +346,23 @@ export default function TillPage() {
       );
     } finally {
       setIsAuditing(false);
+    }
+  };
+
+  // --- Handle Edit Update ---
+  const handleUpdateTillEntry = async (id, newAmount) => {
+    try {
+      await api.updateTillEntry(id, { till_entry: newAmount });
+      toast.success("Till amount updated successfully!");
+      setEditingTillRecord(null);
+      loadHistory();
+
+      // Re-trigger balance check in case the locked amount changed
+      setValue("store_id", watchedStoreId, { shouldValidate: true });
+    } catch (err) {
+      toast.error(
+        err?.response?.data?.error || err.message || "Failed to update amount",
+      );
     }
   };
 
@@ -347,7 +460,8 @@ export default function TillPage() {
         className={`bg-white rounded-xl shadow-sm border p-5 transition-colors ${lockedDate ? "border-rose-300" : "border-slate-200"}`}
       >
         <h2 className="text-xl font-extrabold text-slate-800 mb-6 border-b border-slate-100 pb-3 flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-emerald-500"></div> Open Till
+          <div className="w-2 h-2 rounded-full bg-emerald-500"></div> Open Til ({" "}
+          {displayMarketName} )
         </h2>
 
         {lockedDate && (
@@ -589,7 +703,6 @@ export default function TillPage() {
                 <th className="px-4 py-3 text-right text-rose-600">
                   Spent (-)
                 </th>
-                {/* 🔥 NEW REASON COLUMN */}
                 <th className="px-4 py-3">Reason</th>
                 <th className="px-4 py-3 text-right bg-indigo-50 text-indigo-800 border-l">
                   Final Balance
@@ -651,10 +764,25 @@ export default function TillPage() {
                       <td className="px-4 py-2 font-semibold text-slate-800">
                         {r.store || "-"}
                       </td>
+
+                      {/* MODIFIED: Edit icon added here */}
                       <td className="px-4 py-2 text-right font-mono text-emerald-600">
-                        {num(r.till_entry) > 0
-                          ? `+$${fmt2(r.till_entry)}`
-                          : "$0.00"}
+                        <div className="flex items-center justify-end gap-2">
+                          <span>
+                            {num(r.till_entry) > 0
+                              ? `+$${fmt2(r.till_entry)}`
+                              : "$0.00"}
+                          </span>
+                          {!isAudited && (
+                            <button
+                              onClick={() => setEditingTillRecord(r)}
+                              className="text-slate-400 hover:text-indigo-600 transition-colors"
+                              title="Edit Amount"
+                            >
+                              <EditIcon />
+                            </button>
+                          )}
+                        </div>
                       </td>
 
                       <td
@@ -667,7 +795,6 @@ export default function TillPage() {
                           : "Pending..."}
                       </td>
 
-                      {/* 🔥 NEW REASON DATA CELL */}
                       <td className="px-4 py-2 text-[10px] text-slate-500">
                         <TruncatedTooltip
                           text={r.reason_for_spending}
@@ -724,6 +851,14 @@ export default function TillPage() {
           </div>
         </div>
       </div>
+
+      {/* EDIT MODAL */}
+      <EditTillModal
+        isOpen={!!editingTillRecord}
+        onClose={() => setEditingTillRecord(null)}
+        record={editingTillRecord}
+        onSave={handleUpdateTillEntry}
+      />
 
       <BookClosedPopup
         isOpen={showClosedPopup}

@@ -1028,7 +1028,7 @@ export default function CommissionApprovalPage({ navParams }) {
                           {r.employee_name || "-"}
                         </div>
                         <div className="text-[10px] text-slate-400 font-mono truncate">
-                          {r.employee_id || "-"}
+                          {r.employee_ntid || "-"}
                         </div>
                       </td>
 

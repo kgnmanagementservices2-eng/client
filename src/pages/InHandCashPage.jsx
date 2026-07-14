@@ -23,10 +23,105 @@ function pad2(n) {
   return String(n).padStart(2, "0");
 }
 
+// --- INLINE SVG ICONS ---
+const EditIcon = ({ className = "w-4 h-4" }) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={className}
+  >
+    <path d="M12 20h9" />
+    <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+  </svg>
+);
+
+// --- EDIT MODAL COMPONENT ---
+const EditPickupModal = ({ isOpen, onClose, record, onSave }) => {
+  const [amount, setAmount] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (record) {
+      setAmount(String(num(record.cash_entry)));
+    }
+  }, [record]);
+
+  if (!isOpen || !record) return null;
+
+  const handleAmountChange = (e) => {
+    const value = e.target.value.replace(/[^0-9.,$-]/g, "");
+    setAmount(value);
+  };
+
+  const handleSave = async () => {
+    const parsedAmount = parseFloat(amount.replace(/[$,\s]/g, ""));
+    if (isNaN(parsedAmount)) {
+      toast.error("Please enter a valid amount.");
+      return;
+    }
+    setIsSaving(true);
+    await onSave(record.id, parsedAmount);
+    setIsSaving(false);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden animate-fadeIn">
+        <div className="px-6 py-4 border-b border-slate-100 bg-slate-50">
+          <h3 className="text-lg font-bold text-slate-800">
+            Edit Pick Up Amount
+          </h3>
+        </div>
+        <div className="p-6">
+          <div className="mb-4">
+            <p className="text-xs text-slate-500 font-medium mb-1">
+              Editing entry for:
+            </p>
+            <p className="text-sm font-bold text-slate-700 capitalize">
+              {record.store || "Market-Level"} - {toISO(record.date)}
+            </p>
+          </div>
+          <label className="block text-[11px] uppercase font-bold text-slate-500 mb-1.5 tracking-wider">
+            New Pick Up Amount *
+          </label>
+          <input
+            type="text"
+            value={amount}
+            onChange={handleAmountChange}
+            className="border border-slate-300 rounded-lg px-3 py-2 text-base w-full outline-none transition-shadow font-mono focus:ring-2 focus:ring-indigo-500"
+            placeholder="0.00"
+            autoFocus
+          />
+        </div>
+        <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
+          <button
+            onClick={onClose}
+            disabled={isSaving}
+            className="px-4 py-2 rounded-lg font-bold text-sm text-slate-600 hover:bg-slate-200 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={isSaving}
+            className="px-5 py-2 rounded-lg font-bold text-sm bg-indigo-600 text-white hover:bg-indigo-700 transition-colors disabled:opacity-50"
+          >
+            {isSaving ? "Saving..." : "Save Changes"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export default function InHandCashPage() {
   const { selectedMarket, selectedStore, markets } = useGlobalState();
 
-  // Map the integer ID back to the human-readable name for display
   const currentMarketObj = (markets || []).find((m) => m.id === selectedMarket);
   const displayMarketName = currentMarketObj
     ? currentMarketObj.name
@@ -65,17 +160,16 @@ export default function InHandCashPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [showClosedPopup, setShowClosedPopup] = useState(false);
 
-  // --- Add Entry Modal (Multi-Store Logic Restored) ---
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [editingRecord, setEditingRecord] = useState(null);
 
   const [date, setDate] = useState(todayCST());
-  const [selectedStores, setSelectedStores] = useState([]); // Array of Store IDs
-  const [storeAmounts, setStoreAmounts] = useState({}); // Keyed by Store ID
+  const [selectedStores, setSelectedStores] = useState([]);
+  const [storeAmounts, setStoreAmounts] = useState({});
   const [globalNote, setGlobalNote] = useState("");
   const [cashEntryTotal, setCashEntryTotal] = useState("0.00");
 
-  // Calculate the live total as amounts are entered
   useEffect(() => {
     const total = Object.values(storeAmounts).reduce(
       (sum, amt) => sum + (num(amt) || 0),
@@ -84,7 +178,6 @@ export default function InHandCashPage() {
     setCashEntryTotal(fmt(total));
   }, [storeAmounts]);
 
-  // Multi-Store Input Handlers
   const addStore = (storeIdStr) => {
     const storeId = parseInt(storeIdStr, 10);
     if (storeId && !selectedStores.includes(storeId)) {
@@ -103,16 +196,14 @@ export default function InHandCashPage() {
   };
 
   const updateAmount = (storeId, val) => {
-    const clean = val.replace(/[^0-9.]/g, "");
+    const clean = val.replace(/[^0-9.-]/g, "");
     setStoreAmounts((prev) => ({ ...prev, [storeId]: clean }));
   };
 
-  // Auto-clear dates when month/year changes
   useEffect(() => {
     setSelectedSpecificDates([]);
   }, [month, year]);
 
-  // Fetch stores as objects so we can use .id and .name
   useEffect(() => {
     if (selectedMarket) {
       api
@@ -128,7 +219,6 @@ export default function InHandCashPage() {
     setFStore(selectedStore || "");
   }, [selectedStore]);
 
-  // Reset pagination on filter change
   useEffect(() => {
     setCurrentPage(1);
   }, [
@@ -142,7 +232,6 @@ export default function InHandCashPage() {
     searchTerm,
   ]);
 
-  // 🚀 SERVER-SIDE DATA FETCHING
   const fetchFiltered = useCallback(async () => {
     setIsLoading(true);
     try {
@@ -175,7 +264,6 @@ export default function InHandCashPage() {
         limit: ROWS_PER_PAGE,
       });
 
-      // Safely unpack the rows depending on how your backend sends them
       const dataRows = response.data || response || [];
       setRows(dataRows);
       setTotalPages(response.pagination?.totalPages || 1);
@@ -210,7 +298,6 @@ export default function InHandCashPage() {
     fetchFiltered();
   }, [fetchFiltered]);
 
-  // --- Form Handlers ---
   const handleAddSubmit = async (e) => {
     e.preventDefault();
     if (!selectedMarket) return toast.error("Please select a market first.");
@@ -221,25 +308,21 @@ export default function InHandCashPage() {
     const toastId = toast.loading("Saving entries...");
 
     try {
-      // Create a promise for each selected store
       const promises = selectedStores.map((storeId) => {
         const amountVal = num(storeAmounts[storeId] || "0");
-
         return api.createMarketCash({
           date: date,
           market_id: selectedMarket,
           store_id: storeId,
           cash_entry: amountVal,
-          carry_forwarded_amount: 0, // Defaults to 0 permanently
-          notes: globalNote, // Applies to all entries in this batch
+          carry_forwarded_amount: 0,
+          notes: globalNote,
         });
       });
 
       await Promise.all(promises);
-
       toast.success("Saved successfully ✅", { id: toastId });
 
-      // Reset Modal Form
       setIsAddModalOpen(false);
       setSelectedStores([]);
       setStoreAmounts({});
@@ -261,6 +344,20 @@ export default function InHandCashPage() {
       }
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  // --- HANDLE EDIT UPDATE ---
+  const handleUpdateAmount = async (id, newAmount) => {
+    try {
+      await api.updateMarketCash(id, { cash_entry: newAmount });
+      toast.success("Amount updated successfully!");
+      setEditingRecord(null);
+      fetchFiltered();
+    } catch (err) {
+      toast.error(
+        err?.response?.data?.error || err.message || "Failed to update amount",
+      );
     }
   };
 
@@ -454,6 +551,14 @@ export default function InHandCashPage() {
         </div>
       )}
 
+      {/* EDIT MODAL */}
+      <EditPickupModal
+        isOpen={!!editingRecord}
+        onClose={() => setEditingRecord(null)}
+        record={editingRecord}
+        onSave={handleUpdateAmount}
+      />
+
       {/* FILTERS */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 mb-6">
         <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 items-end">
@@ -618,9 +723,9 @@ export default function InHandCashPage() {
                 rows.map((r) => (
                   <tr
                     key={r.id}
-                    className="hover:bg-slate-50/80 transition-colors h-14"
+                    className="hover:bg-slate-50/80 transition-colors h-14 group"
                   >
-                    <td className="px-4 py-2 sticky left-0 bg-white border-r border-slate-100 font-medium text-slate-700 z-10">
+                    <td className="px-4 py-2 sticky left-0 bg-white group-hover:bg-slate-50/80 border-r border-slate-100 font-medium text-slate-700 z-10">
                       {toISO(r.date)}
                     </td>
                     <td className="px-4 py-2">
@@ -631,9 +736,23 @@ export default function InHandCashPage() {
                         {r.market}
                       </div>
                     </td>
+
+                    {/* MODIFIED: Edit icon added here */}
                     <td className="px-4 py-2 text-right font-mono text-slate-600">
-                      ${fmt(r.cash_entry)}
+                      <div className="flex items-center justify-end gap-2">
+                        <span>${fmt(r.cash_entry)}</span>
+                        {r.audit_status !== "audited" && (
+                          <button
+                            onClick={() => setEditingRecord(r)}
+                            className="text-slate-400 hover:text-indigo-600 transition-colors"
+                            title="Edit Amount"
+                          >
+                            <EditIcon />
+                          </button>
+                        )}
+                      </div>
                     </td>
+
                     <td className="px-4 py-2 text-right font-mono font-extrabold text-indigo-700 bg-indigo-50/20">
                       ${fmt(r.total_amount)}
                     </td>
@@ -670,7 +789,6 @@ export default function InHandCashPage() {
                 >
                   Page Totals:
                 </td>
-                {/* Update this block in your <tfoot> */}
                 <td className="px-4 py-3 text-right font-bold font-mono text-indigo-700">
                   $
                   {fmt(
