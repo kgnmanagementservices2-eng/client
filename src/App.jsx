@@ -1,10 +1,19 @@
 import React, { useState, useEffect } from "react";
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  Navigate,
+  useNavigate,
+  useLocation,
+} from "react-router-dom";
 import { useAuth } from "./context/AuthContext.jsx";
 import { Toaster } from "react-hot-toast";
+
 // Layout & Pages
 import MainLayout from "./components/layout/MainLayout.jsx";
 import LoginPage from "./pages/LoginPage.jsx";
-import NoInternetPage from "./pages/NoInternetPage.jsx"; // Offline page
+import NoInternetPage from "./pages/NoInternetPage.jsx";
 import DashboardPage from "./pages/DashboardPage.jsx";
 import SalesPage from "./pages/SalesPage.jsx";
 import VariancePage from "./pages/VariancePage.jsx";
@@ -14,7 +23,7 @@ import StoreExpensePage from "./pages/StoreExpensePage.jsx";
 import ExpenseApprovalPage from "./pages/ExpenseApprovalPage.jsx";
 import PayrollExpensePage from "./pages/PayrollExpensePage.jsx";
 import PayrollHistoryPage from "./pages/PayrollHistoryPage.jsx";
-import CommissionEntryPage from "./pages/CommissionEntryPage.jsx"; // 🔥 NEW IMPORT
+import CommissionEntryPage from "./pages/CommissionEntryPage.jsx";
 import CommissionHistoryPage from "./pages/CommissionHistoryPage.jsx";
 import ExpenseHistoryPage from "./pages/ExpenseHistoryPage.jsx";
 import PayrollApprovalPage from "./pages/PayrollApprovalPage.jsx";
@@ -24,7 +33,7 @@ import PickUpApprovalPage from "./pages/PickUpApprovalPage.jsx";
 import ProtectedRoute from "./components/auth/ProtectedRoute.jsx";
 import FinancialCards from "./components/FinancialCards.jsx";
 import AdminManagementPage from "./pages/AdminManagementPage.jsx";
-// 🛡️ CRITICAL FIX: Updated to match PostgreSQL Database ENUMs perfectly
+
 const ROLE = {
   ADMIN: "admin",
   SUPER_ADMIN: "super_admin",
@@ -51,13 +60,13 @@ const pages = {
     title: "Sales",
     subtitle: "",
     component: SalesPage,
-    roles: [ROLE.ADMIN, ROLE.SUPER_ADMIN, ROLE.MANAGER, ROLE.EXP_COMM],
+    roles: [ROLE.ADMIN, ROLE.SUPER_ADMIN, ROLE.EXP_COMM],
   },
   "admin-management": {
     component: AdminManagementPage,
     title: "Admin Management",
     subtitle: "Manage Markets, Stores, and Employees",
-    roles: ["admin", "super_admin", "payroll_manager"], // Only Admins and Managers can access
+    roles: ["admin", "super_admin", "payroll_manager"],
   },
   variance: {
     title: "Variance",
@@ -66,7 +75,7 @@ const pages = {
     roles: [ROLE.ADMIN, ROLE.SUPER_ADMIN, ROLE.MANAGER, ROLE.EXP_COMM],
   },
   till: {
-    title: "Till Amount",
+    title: "Til Amount",
     subtitle: " ",
     component: TillPage,
     roles: [ROLE.ADMIN, ROLE.SUPER_ADMIN, ROLE.MANAGER, ROLE.EXP_COMM],
@@ -113,7 +122,6 @@ const pages = {
     component: PayrollHistoryPage,
     roles: [ROLE.ADMIN, ROLE.SUPER_ADMIN, ROLE.PAYROLL, ROLE.MANAGER],
   },
-  // 🔥 NEW PAGE ADDED TO ROUTER
   "commission-entry": {
     title: "Commission Entry",
     subtitle: "",
@@ -159,16 +167,96 @@ const pages = {
 };
 
 /**
- * Main App component. Acts as a simple router with offline detection.
+ * Inner routing component that utilizes React Router hooks
+ */
+function AppRoutes() {
+  const { isAuthenticated, loading } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // Backward compatibility: Convert onNavigate calls to URL routing
+  const handleNavigate = (pathKey, params = null) => {
+    navigate(`/cashflow/${pathKey}`, { state: params });
+  };
+
+  // Backward compatibility: Native browser back routing
+  const handleBack = () => {
+    navigate(-1);
+  };
+
+  if (loading) {
+    return (
+      <div className="bg-slate-50 min-h-screen w-full flex items-center justify-center">
+        Loading session...
+      </div>
+    );
+  }
+
+  // Unauthenticated routing
+  if (!isAuthenticated) {
+    return (
+      <Routes>
+        <Route
+          path="/login"
+          element={<LoginPage onNavigate={handleNavigate} />}
+        />
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+    );
+  }
+
+  // Authenticated Routing
+  return (
+    <Routes>
+      {/* Default Redirect to Dashboard */}
+      <Route path="/" element={<Navigate to="/cashflow/dashboard" replace />} />
+      <Route
+        path="/cashflow"
+        element={<Navigate to="/cashflow/dashboard" replace />}
+      />
+
+      {/* Map through your pages definition to generate standard URL Routes */}
+      {Object.entries(pages).map(([pathKey, def]) => {
+        const CurrentPage = def.component;
+
+        return (
+          <Route
+            key={pathKey}
+            path={`/cashflow/${pathKey}`}
+            element={
+              <ProtectedRoute
+                roles={def.roles}
+                onNavigate={handleNavigate}
+                onBack={handleBack}
+                canGoBack={location.key !== "default"}
+                currentPage={pathKey}
+                pageTitle={def.title}
+                pageSubtitle={def.subtitle}
+              >
+                {/* Passes the handleNavigate wrapper down, allowing your existing
+                  components to trigger routes using `onNavigate("sales")` exactly
+                  like they used to!
+                */}
+                <CurrentPage
+                  onNavigate={handleNavigate}
+                  navParams={location.state}
+                />
+              </ProtectedRoute>
+            }
+          />
+        );
+      })}
+
+      {/* Catch-all to redirect invalid routes to dashboard */}
+      <Route path="*" element={<Navigate to="/cashflow/dashboard" replace />} />
+    </Routes>
+  );
+}
+
+/**
+ * Main App Root
  */
 export default function App() {
-  const [page, setPage] = useState("dashboard");
-  const [navParams, setNavParams] = useState(null);
-
-  // History stack to track navigation
-  const [history, setHistory] = useState(["dashboard"]);
-
-  const { isAuthenticated, loading, user } = useAuth();
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
   useEffect(() => {
@@ -184,73 +272,14 @@ export default function App() {
     };
   }, []);
 
-  // onNavigate now pushes to history
-  const onNavigate = (path, params = null) => {
-    setPage(path);
-    setNavParams(params);
-
-    setHistory((prev) => {
-      // Don't add to history if we are clicking the same page we are already on
-      const currentLast = prev[prev.length - 1];
-      if (currentLast === path) return prev;
-      return [...prev, path];
-    });
-  };
-
-  // Handle Back functionality
-  const handleBack = () => {
-    if (history.length > 1) {
-      const newHistory = [...history];
-      newHistory.pop(); // Remove current page
-      const previousPage = newHistory[newHistory.length - 1]; // Get previous
-
-      setHistory(newHistory);
-      setPage(previousPage);
-      setNavParams(null); // Clear params when going back
-    }
-  };
-
   if (!isOnline) {
     return <NoInternetPage />;
   }
 
-  if (loading) {
-    return (
-      <div className="bg-slate-50 min-h-screen w-full flex items-center justify-center">
-        Loading session...
-      </div>
-    );
-  }
-
-  if (!isAuthenticated) {
-    return (
-      <>
-        <Toaster position="top-right" />
-        <LoginPage onNavigate={onNavigate} />
-      </>
-    );
-  }
-
-  const currentDef = pages[page] || pages.dashboard;
-  const CurrentPage = currentDef.component;
-  const pageTitle = currentDef.title || "Dashboard";
-  const pageSubtitle = currentDef.subtitle || "";
-
   return (
-    <>
-      {/* 🚀 Render the Toaster so it's globally available inside the app */}
+    <Router>
       <Toaster position="top-right" />
-      <ProtectedRoute
-        roles={currentDef.roles}
-        onNavigate={onNavigate}
-        onBack={handleBack}
-        canGoBack={history.length > 1}
-        currentPage={page}
-        pageTitle={pageTitle}
-        pageSubtitle={pageSubtitle}
-      >
-        <CurrentPage onNavigate={onNavigate} navParams={navParams} />
-      </ProtectedRoute>
-    </>
+      <AppRoutes />
+    </Router>
   );
 }
