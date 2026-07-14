@@ -23,9 +23,9 @@ const ChevronDown = ({ className }) => (
 const navStructure = [
   { name: "Dashboard", path: "dashboard" },
   { name: "Cash Tracker", path: "combined-sales-expenses" },
-  { name: "Sales", path: "sales" },
+  { name: "Sales", path: "sales", adminOnly: true },
   { name: "Variance", path: "variance" },
-  { name: "Till Amount", path: "till" },
+  { name: "Til Amount", path: "till" },
   {
     name: "Store Expenses",
     id: "group-store-expenses",
