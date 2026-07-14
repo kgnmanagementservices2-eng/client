@@ -656,6 +656,26 @@ const api = {
       body: JSON.stringify(payload),
     });
   },
+  updateExpense(id, data) {
+    return this.request(`expenses/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  },
+  // Add this inside your api object in api.js
+  updateMarketCash(id, data) {
+    return this.request(`market-cash/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  },
+  // Add this inside the api object in api.js
+  updateTillEntry(id, data) {
+    return this.request(`cashflow/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  },
 };
 
 export default api;
